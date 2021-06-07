@@ -13,22 +13,28 @@ using Microsoft.Extensions.Logging;
 
 namespace FunctionApp2
 {
-    public static class Function1
+    public class Function1
     {
+        private readonly IRecipeClient _recipeClient;
+        public Function1(IRecipeClient recipeClient)
+        {
+            _recipeClient = recipeClient;
+        }
+
         [FunctionName("Function1")]
         public static async Task<string> RunOrchestrator(
             [OrchestrationTrigger] IDurableOrchestrationContext context)
         {
             Uri uri = new Uri("http://taco-randomizer.herokuapp.com/random/");
-            string recipe = await context.CallActivityAsync<string>("DownloadRecipe", uri);
-            string saverecipe= await context.CallActivityAsync<string>("SaveRecipe", recipe);
-            
+            string recipe = await context.CallActivityAsync<string>("DownloadRecipe", null);
+            string saverecipe = await context.CallActivityAsync<string>("SaveRecipe", recipe);
+
             return recipe + saverecipe;
         }
 
 
         [FunctionName("Function1_HttpStart")]
-        public static async Task<HttpResponseMessage> HttpStart(
+        public async Task<HttpResponseMessage> HttpStart(
             [HttpTrigger(AuthorizationLevel.Anonymous, "get", "post")] HttpRequestMessage req,
             [DurableClient] IDurableOrchestrationClient starter,
             ILogger log)
@@ -42,47 +48,17 @@ namespace FunctionApp2
         }
 
         [FunctionName("DownloadRecipe")]
-        
-        public static async Task<string> DownloadRecipe([ActivityTrigger]  Uri uri,ILogger log)
+
+        public async Task<string> DownloadRecipe([ActivityTrigger] ILogger logger)
         {
-            System.Net.Http.HttpClient client = new HttpClient();
-            client.BaseAddress = uri;
-            client.DefaultRequestHeaders.Accept.Clear();
-            client.DefaultRequestHeaders.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("application/json"));
-            HttpResponseMessage response = await client.GetAsync("");
-            if (response.IsSuccessStatusCode)
-            {
-                string result = await response.Content.ReadAsStringAsync();
-                log.LogInformation(result);
-                return result;
-
-            }
-            return "";
-        }
-        
-       [FunctionName("SaveRecipe")]
-        public static async Task<string> SaveRecipe([ActivityTrigger] string recipe)
-            
-        {
-            BlobServiceClient blobServiceClient = new BlobServiceClient("DefaultEndpointsProtocol=https;AccountName=azurefunctionstest202106;AccountKey=HIwwoHfRvNOF3ZvjJ0iV4dVsIqLeKkYi+YOl4rbYihd7EJHhl93FeKC/iArKC4uaYzLgVeGIvAmWVZUYZFGDLQ==;EndpointSuffix=core.windows.net");
-            BlobContainerClient blobContainerClient =  blobServiceClient.GetBlobContainerClient("recipes");
-
-            BlobClient blobClient = blobContainerClient.GetBlobClient("recipe_"+ Guid.NewGuid().ToString()+".json");
-
-
-            await blobClient.UploadAsync(recipe.ToStream());
-
-            return "OK";
+            return await _recipeClient.DownloadRecipe();
         }
 
-        public static Stream ToStream(this string str)
+        [FunctionName("SaveRecipe")]
+        public async Task SaveRecipe([ActivityTrigger] string recipe)
+
         {
-            MemoryStream memoryStream = new MemoryStream();
-            StreamWriter streamWriter = new StreamWriter(memoryStream);
-            streamWriter.Write(str);
-            streamWriter.Flush();
-            memoryStream.Position = 0;
-            return memoryStream;
+            await _recipeClient.SaveRecipe(recipe);
         }
     }
 }
